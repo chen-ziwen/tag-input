@@ -3,7 +3,7 @@
         <div ref="editableContainer" class="editable-area" contenteditable="true" @keydown="handleKeyDown"
             @focus="handleFocus" @click="handleClick" @input="handleInput" placeholder="请输入内容或点击下方标签添加..."></div>
         <div class="tags-container">
-            <el-tag v-for="tag in tags" :key="tag" class="tag-item" @click="handleTagClick(tag)">
+            <el-tag v-for="tag in modelValue.tags" :key="tag" class="tag-item" @click="handleTagClick(tag)">
                 {{ tag }}
             </el-tag>
         </div>
@@ -11,7 +11,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, h, render, useTemplateRef, onMounted, nextTick } from 'vue'
+import { ref, h, render, useTemplateRef, onMounted, nextTick, toRaw } from 'vue'
 import { ElTag } from 'element-plus'
 import { CursorManager } from '../utils/CursorManager'
 
@@ -22,19 +22,16 @@ export interface TagInputModelValue {
 
 interface TagInputProps {
     modelValue: TagInputModelValue;
-    availableTags?: string[]; // 可选的标签列表
 }
 
 const props = withDefaults(defineProps<TagInputProps>(), {
-    modelValue: () => ({ tags: [], value: [] }),
-    availableTags: () => ['礼物', '弹幕', "节日"]
+    modelValue: () => ({ tags: [], value: [] })
 });
 
 const emit = defineEmits<{
     'update:modelValue': [value: TagInputModelValue]
 }>();
 
-const tags = ref(props.availableTags);
 const editableContainer = useTemplateRef<HTMLElement>("editableContainer");
 const currentRange = ref<Range | null>(null);
 
@@ -134,7 +131,7 @@ const updateModelValue = () => {
     });
 
     emit('update:modelValue', {
-        tags: tags.value,
+        tags: toRaw(props.modelValue.tags),
         value
     });
 };
@@ -191,50 +188,82 @@ const handleTagClick = (tag: string) => {
 const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Backspace') {
         const selection = window.getSelection();
-        if (selection && selection.anchorNode) {
-            // 检查光标是否在标签旁边或标签内
-            const anchorNode = selection.anchorNode;
-            const parentElement = anchorNode.nodeType === Node.TEXT_NODE ?
-                anchorNode.parentElement : anchorNode as HTMLElement;
+        if (!selection || selection.rangeCount === 0) return;
 
-            // 如果光标在标签容器内
-            const tagContainer = parentElement?.closest('.tag-container') as HTMLElement;
-            if (tagContainer) {
-                e.preventDefault();
+        const range = selection.getRangeAt(0);
 
-                if (cursorManager) {
-                    cursorManager.removeElementAndAdjustCursor(tagContainer);
+        // 如果有选中内容，让浏览器自然处理删除
+        if (!range.collapsed) {
+            return;
+        }
+
+        const { startContainer, startOffset } = range;
+
+        // 方法1: 检查光标是否在标签容器内
+        let currentNode: Node | null = startContainer;
+        while (currentNode && currentNode !== editableContainer.value) {
+            if (currentNode.nodeType === Node.ELEMENT_NODE) {
+                const element = currentNode as HTMLElement;
+                if (element.classList?.contains('tag-container')) {
+                    e.preventDefault();
+                    if (cursorManager) {
+                        cursorManager.removeElementAndAdjustCursor(element);
+                    }
+                    nextTick(() => {
+                        updateModelValue();
+                        saveCursorPosition();
+                    });
+                    return;
                 }
+            }
+            currentNode = currentNode.parentNode;
+        }
 
-                // 更新数据
+        // 方法2: 检查光标前面是否有标签（更精确的判断）
+        if (startOffset === 0 && startContainer.nodeType === Node.TEXT_NODE) {
+            // 文本节点开始位置，检查前一个兄弟节点
+            const prevSibling = startContainer.previousSibling as HTMLElement;
+            if (prevSibling?.classList?.contains('tag-container')) {
+                e.preventDefault();
+                if (cursorManager) {
+                    cursorManager.removeElementAndAdjustCursor(prevSibling);
+                }
                 nextTick(() => {
                     updateModelValue();
                     saveCursorPosition();
                 });
-
                 return;
             }
-
-            // 检查光标前面是否是标签
-            if (selection.anchorOffset === 0) {
-                let prevElement: HTMLElement | null = null;
-
-                // 如果当前节点是文本节点，检查前一个兄弟元素
-                if (anchorNode.nodeType === Node.TEXT_NODE) {
-                    prevElement = anchorNode.previousSibling as HTMLElement;
-                } else {
-                    // 如果当前是元素节点，检查前一个子元素
-                    const currentElement = anchorNode as HTMLElement;
-                    prevElement = currentElement.previousElementSibling as HTMLElement;
+        } else if (startContainer === editableContainer.value && startOffset > 0) {
+            // 在容器根节点且不在开始位置，检查光标位置前的子节点
+            const childNodes = Array.from(editableContainer.value.childNodes);
+            const prevChild = childNodes[startOffset - 1] as HTMLElement;
+            if (prevChild?.classList?.contains('tag-container')) {
+                e.preventDefault();
+                if (cursorManager) {
+                    cursorManager.removeElementAndAdjustCursor(prevChild);
                 }
+                nextTick(() => {
+                    updateModelValue();
+                    saveCursorPosition();
+                });
+                return;
+            }
+        }
 
-                if (prevElement?.classList?.contains('tag-container')) {
+        // 方法3: 特殊情况 - 光标在容器末尾且最后一个元素是标签
+        if (startContainer === editableContainer.value) {
+            const children = editableContainer.value.children;
+            const childNodes = editableContainer.value.childNodes;
+
+            // 检查是否在末尾且最后一个是标签
+            if (startOffset === childNodes.length && children.length > 0) {
+                const lastChild = children[children.length - 1] as HTMLElement;
+                if (lastChild?.classList?.contains('tag-container')) {
                     e.preventDefault();
-
                     if (cursorManager) {
-                        cursorManager.removeElementAndAdjustCursor(prevElement);
+                        cursorManager.removeElementAndAdjustCursor(lastChild);
                     }
-
                     nextTick(() => {
                         updateModelValue();
                         saveCursorPosition();
@@ -245,7 +274,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         }
     }
 
-    // 保存光标位置
+    // 其他按键或无需特殊处理的 Backspace，保存光标位置
     nextTick(() => {
         saveCursorPosition();
     });
@@ -263,7 +292,7 @@ onMounted(() => {
     padding: 10px;
 
     .editable-area {
-        min-height: 50px;
+        min-height: 24px;
         border: 1px solid #e4e7ed;
         border-radius: 4px;
         padding: 8px;

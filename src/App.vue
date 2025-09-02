@@ -4,14 +4,17 @@ import TagInput from './components/TagInput.vue';
 import type { TagInputModelValue } from './components/TagInput.vue';
 
 // 可选标签列表
-const availableTags = ref(["礼物", "弹幕", "节日", "活动", "直播"]);
+const availableTags = ref(["礼物", "弹幕", "用户", "数量", "时间"]);
 
 // value 值是一个对象数据
 const mockValue = ref<TagInputModelValue>({
   tags: availableTags.value,
   value: [
+    { type: "tag", value: "用户" },
     { type: "text", value: "赠送" },
     { type: "tag", value: "礼物" },
+    { type: "text", value: "x" },
+    { type: "tag", value: "数量" },
     { type: "text", value: "参与投票" },
   ]
 });
