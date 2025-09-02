@@ -66,7 +66,7 @@ const renderModelValue = () => {
     });
 };
 
-// 生成一个 ElTag 标签的虚拟节点
+// 创建一个 ElTag 标签的虚拟节点
 const createTagElement = (tag: string, onRemove: () => void) => {
     return h(ElTag, {
         key: tag,
@@ -184,6 +184,65 @@ const handleTagClick = (tag: string) => {
     });
 };
 
+// 删除标签的公用方法
+const removeTagAndUpdate = (element: HTMLElement) => {
+    if (cursorManager) {
+        cursorManager.removeElementAndAdjustCursor(element);
+    }
+    nextTick(() => {
+        updateModelValue();
+        saveCursorPosition();
+    });
+};
+
+// 检查元素是否为标签容器
+const isTagContainer = (element: any): element is HTMLElement => {
+    return element?.classList?.contains('tag-container');
+};
+
+// 查找要删除的标签元素
+const findTagToDelete = (startContainer: Node, startOffset: number): HTMLElement | null => {
+    if (!editableContainer.value) return null;
+
+    // 情况1: 光标在标签容器内部
+    let currentNode: Node | null = startContainer;
+    while (currentNode && currentNode !== editableContainer.value) {
+        if (currentNode.nodeType === Node.ELEMENT_NODE && isTagContainer(currentNode)) {
+            return currentNode;
+        }
+        currentNode = currentNode.parentNode;
+    }
+
+    // 情况2: 光标在文本节点开始位置，检查前一个兄弟节点
+    if (startOffset === 0 && startContainer.nodeType === Node.TEXT_NODE) {
+        const prevSibling = startContainer.previousSibling;
+        if (isTagContainer(prevSibling)) {
+            return prevSibling;
+        }
+    }
+
+    // 情况3: 光标在容器根节点，检查前面的子节点
+    if (startContainer === editableContainer.value && startOffset > 0) {
+        const prevChild = editableContainer.value.childNodes[startOffset - 1];
+        if (isTagContainer(prevChild)) {
+            return prevChild;
+        }
+    }
+
+    // 情况4: 光标在容器末尾，检查最后一个子元素
+    if (startContainer === editableContainer.value) {
+        const childNodes = editableContainer.value.childNodes;
+        if (startOffset === childNodes.length) {
+            const lastChild = editableContainer.value.lastElementChild;
+            if (isTagContainer(lastChild)) {
+                return lastChild;
+            }
+        }
+    }
+
+    return null;
+};
+
 // 处理键盘删除事件
 const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Backspace') {
@@ -199,78 +258,12 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
         const { startContainer, startOffset } = range;
 
-        // 方法1: 检查光标是否在标签容器内
-        let currentNode: Node | null = startContainer;
-        while (currentNode && currentNode !== editableContainer.value) {
-            if (currentNode.nodeType === Node.ELEMENT_NODE) {
-                const element = currentNode as HTMLElement;
-                if (element.classList?.contains('tag-container')) {
-                    e.preventDefault();
-                    if (cursorManager) {
-                        cursorManager.removeElementAndAdjustCursor(element);
-                    }
-                    nextTick(() => {
-                        updateModelValue();
-                        saveCursorPosition();
-                    });
-                    return;
-                }
-            }
-            currentNode = currentNode.parentNode;
-        }
-
-        // 方法2: 检查光标前面是否有标签（更精确的判断）
-        if (startOffset === 0 && startContainer.nodeType === Node.TEXT_NODE) {
-            // 文本节点开始位置，检查前一个兄弟节点
-            const prevSibling = startContainer.previousSibling as HTMLElement;
-            if (prevSibling?.classList?.contains('tag-container')) {
-                e.preventDefault();
-                if (cursorManager) {
-                    cursorManager.removeElementAndAdjustCursor(prevSibling);
-                }
-                nextTick(() => {
-                    updateModelValue();
-                    saveCursorPosition();
-                });
-                return;
-            }
-        } else if (startContainer === editableContainer.value && startOffset > 0) {
-            // 在容器根节点且不在开始位置，检查光标位置前的子节点
-            const childNodes = Array.from(editableContainer.value.childNodes);
-            const prevChild = childNodes[startOffset - 1] as HTMLElement;
-            if (prevChild?.classList?.contains('tag-container')) {
-                e.preventDefault();
-                if (cursorManager) {
-                    cursorManager.removeElementAndAdjustCursor(prevChild);
-                }
-                nextTick(() => {
-                    updateModelValue();
-                    saveCursorPosition();
-                });
-                return;
-            }
-        }
-
-        // 方法3: 特殊情况 - 光标在容器末尾且最后一个元素是标签
-        if (startContainer === editableContainer.value) {
-            const children = editableContainer.value.children;
-            const childNodes = editableContainer.value.childNodes;
-
-            // 检查是否在末尾且最后一个是标签
-            if (startOffset === childNodes.length && children.length > 0) {
-                const lastChild = children[children.length - 1] as HTMLElement;
-                if (lastChild?.classList?.contains('tag-container')) {
-                    e.preventDefault();
-                    if (cursorManager) {
-                        cursorManager.removeElementAndAdjustCursor(lastChild);
-                    }
-                    nextTick(() => {
-                        updateModelValue();
-                        saveCursorPosition();
-                    });
-                    return;
-                }
-            }
+        // 查找要删除的标签
+        const tagToDelete = findTagToDelete(startContainer, startOffset);
+        if (tagToDelete) {
+            e.preventDefault();
+            removeTagAndUpdate(tagToDelete);
+            return;
         }
     }
 
@@ -318,19 +311,19 @@ onMounted(() => {
         // 标签容器样式
         :deep(.tag-container) {
             display: inline-block;
-            margin: 0 4px;
-            vertical-align: baseline; // 与文字基线对齐
-            line-height: 1.5; // 与文字行高一致
+            margin: 2px 4px;
+            vertical-align: baseline;
+            line-height: 1.5;
 
             .el-tag {
                 display: inline-flex;
                 align-items: center;
                 cursor: default;
                 user-select: none;
-                margin: 0; // 移除 tag 自身的 margin
-                vertical-align: baseline; // 与文字基线对齐
-                font-size: 12px; // 稍小的字体使其更协调
-                height: 22px; // 固定高度确保对齐
+                margin: 0;
+                vertical-align: baseline;
+                font-size: 12px;
+                height: 22px;
                 line-height: 1;
                 border-radius: 3px;
 
