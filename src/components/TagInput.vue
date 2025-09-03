@@ -29,12 +29,16 @@ const props = withDefaults(defineProps<TagInputProps>(), {
 });
 
 const model = defineModel({ default: "", required: true });
-
 const editableContainer = useTemplateRef<HTMLElement>("editableContainer");
 const currentRange = ref<Range | null>(null);
 
-// 光标管理实例
 let cursorManager: CursorManager;
+const initComponent = () => {
+    if (!editableContainer.value) return;
+    cursorManager = new CursorManager(editableContainer.value);
+    renderModel();
+};
+
 
 // 解析字符串为内容数组
 const parseStringToContent = (str: string): Array<{ type: valueType; value: string }> => {
@@ -75,16 +79,6 @@ const parseStringToContent = (str: string): Array<{ type: valueType; value: stri
 // 将内容数组转换为字符串
 const contentToString = (content: Array<{ type: valueType; value: string }>): string => {
     return content.map(item => item.type === 'text' ? item.value : `{${item.value}}`).join('');
-};
-
-// 初始化组件
-const initComponent = () => {
-    if (!editableContainer.value) return;
-
-    cursorManager = new CursorManager(editableContainer.value);
-
-    // 初始化时把 model 转换为真实 dom
-    renderModel();
 };
 
 // 将 model 渲染到 dom 中
@@ -135,14 +129,8 @@ const createTagContainer = (tag: string) => {
     container.dataset.tag = tag;
     container.className = 'tag-container';
 
-    const removeTag = () => {
-        cursorManager && cursorManager.removeElementAndAdjustCursor(container);
-
-        nextTick(saveCursorPosition);
-    };
-
     // 创建虚拟节点并渲染到容器中
-    const vnode = createTagElement(tag, removeTag);
+    const vnode = createTagElement(tag, () => removeTag(container));
     render(vnode, container);
 
     return container;
@@ -189,7 +177,7 @@ const handleClick = () => {
 };
 
 const handleInput = () => {
-    nextTick(saveCursorPosition);
+    saveCursorPosition()
 };
 
 const handleBlur = () => {
@@ -205,18 +193,15 @@ const handleTagClick = (tag: string) => {
     const tagContainer = createTagContainer(tag);
 
     // 获取当前保存的光标位置，如果没有则使用默认位置
-    let targetRange = currentRange.value;
-    if (!targetRange || !editableContainer.value.contains(targetRange.commonAncestorContainer)) {
-        targetRange = cursorManager.getDefaultRange();
+    if (!currentRange.value || !editableContainer.value.contains(currentRange.value.commonAncestorContainer)) {
+        currentRange.value = cursorManager.getDefaultRange();
     }
 
     // 在指定位置插入标签
-    cursorManager.insertElementAtRange(tagContainer, targetRange);
-
-    nextTick(saveCursorPosition);
+    cursorManager.insertElementAtRange(tagContainer, currentRange.value);
 };
 
-const removeTagAndUpdate = (element: HTMLElement) => {
+const removeTag = (element: HTMLElement) => {
     if (cursorManager) {
         cursorManager.removeElementAndAdjustCursor(element);
     }
@@ -229,25 +214,46 @@ const isTagContainer = (element: any): element is HTMLElement => {
     return element?.classList?.contains('tag-container');
 };
 
-// 获取光标前面的元素
+// 获取光标前面的元素（用于删除标签判断）
 const getPreviousElement = (startContainer: Node, startOffset: number): Node | null => {
     if (!editableContainer.value) return null;
 
-    // 如果光标在文本节点开始位置，检查前一个兄弟节点
-    if (startOffset === 0 && startContainer.nodeType === Node.TEXT_NODE) {
-        return startContainer.previousSibling;
+    // 1. 如果光标在文本节点中
+    if (startContainer.nodeType === Node.TEXT_NODE) {
+        // 光标在文本开头，检查前一个兄弟节点
+        if (startOffset === 0) {
+            return startContainer.previousSibling;
+        }
+        // 光标在文本中间或末尾，不删除标签
+        return null;
     }
 
-    // 如果光标在容器根节点，检查前面的子节点
+    // 2. 如果光标在容器根节点
     if (startContainer === editableContainer.value && startOffset > 0) {
-        const childNodes = editableContainer.value.childNodes;
-        return childNodes[startOffset - 1] || null;
+        const childNodes = Array.from(editableContainer.value.childNodes);
+
+        // 从光标前一个位置开始向前查找第一个元素节点
+        for (let i = startOffset - 1; i >= 0; i--) {
+            const node = childNodes[i];
+            if (!node) continue;
+
+            // 遇到非空文本节点，不删除标签
+            if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+                return null;
+            }
+
+            // 找到元素节点，返回它
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                return node;
+            }
+        }
     }
 
     return null;
 };
 
 // 处理键盘删除事件
+// 文本节点采用原生删除，遇到标签则利用方法删除 (否则会有bug)
 const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Backspace') {
         const selection = window.getSelection();
@@ -262,18 +268,16 @@ const handleKeyDown = (e: KeyboardEvent) => {
         }
 
         const { startContainer, startOffset } = range;
-
-        // 获取光标前面的元素
         const prevElement = getPreviousElement(startContainer, startOffset);
 
         // 如果前面的元素是标签容器，删除该标签
         if (isTagContainer(prevElement)) {
             e.preventDefault();
-            removeTagAndUpdate(prevElement);
+            removeTag(prevElement);
             return;
         }
 
-        // 其他情况让浏览器自然处理删除（包括文本删除）
+        // 其他情况让浏览器自然处理删除
         nextTick(saveCursorPosition);
     }
 };

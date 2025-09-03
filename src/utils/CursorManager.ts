@@ -79,79 +79,19 @@ export class CursorManager {
     }
 
     /**
-     * 检查光标是否在指定元素内或旁边
-     * @param element 要检查的元素
-     * @returns 如果光标在元素内或旁边返回 true
-     */
-    isCursorNearElement(element: HTMLElement): boolean {
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0) return false;
-
-        // const range = selection.getRangeAt(0);
-        const anchorNode = selection.anchorNode;
-
-        if (!anchorNode) return false;
-
-        // 检查光标是否在元素内
-        if (element.contains(anchorNode)) {
-            return true;
-        }
-
-        // 检查光标是否在元素旁边
-        if (anchorNode.nodeType === Node.TEXT_NODE) {
-            const parentElement = anchorNode.parentElement;
-            if (parentElement &&
-                (parentElement.previousElementSibling === element ||
-                    parentElement.nextElementSibling === element)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * 删除指定元素并调整光标位置
      * @param element 要删除的元素
      */
     removeElementAndAdjustCursor(element: HTMLElement) {
-        // 找到一个安全的光标位置
-        const parentContainer = element.parentElement;
-        if (!parentContainer) {
-            element.remove();
-            return;
-        }
-
-        // 获取元素的前一个兄弟节点
-        const prevSibling = element.previousSibling;
-
-        // 创建一个新的 Range
+        // 创建一个新的 Range 指向元素前面
         const range = document.createRange();
-
-        if (prevSibling && prevSibling.nodeType === Node.TEXT_NODE) {
-            // 如果前面有文本节点，将光标放在文本节点末尾
-            range.setStart(prevSibling, prevSibling.textContent?.length || 0);
-            range.setEnd(prevSibling, prevSibling.textContent?.length || 0);
-        } else {
-            // 否则创建一个指向元素前面位置的范围
-            range.setStartBefore(element);
-            range.setEndBefore(element);
-        }
+        range.setStartBefore(element);
+        range.setEndBefore(element);
 
         // 删除元素
         element.remove();
 
-        // 验证 range 是否仍然有效
-        try {
-            if (parentContainer.contains(range.commonAncestorContainer)) {
-                this.restoreRange(range);
-            } else {
-                // 如果 range 无效，移动到容器末尾
-                this.moveCursorToEnd();
-            }
-        } catch (error) {
-            // 如果出现任何错误，移动到容器末尾
-            this.moveCursorToEnd();
-        }
+        // 恢复光标位置
+        this.restoreRange(range);
     }
 }
