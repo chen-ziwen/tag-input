@@ -48,6 +48,7 @@ const parseStringToContent = (str: string): Array<{ type: valueType; value: stri
     let lastIndex = 0;
     let match;
 
+    // 如果 exec 的正则带有 g 标志，则每次执行会从上次匹配结束的位置开始， lastIndex 会更新
     while ((match = tagRegex.exec(str)) !== null) {
         // 添加标签前的文本
         if (match.index > lastIndex) {
@@ -97,7 +98,6 @@ const renderModelValue = () => {
 
     editableContainer.value.innerHTML = '';
 
-    // 对 modelValue 进行解析
     const content = parseStringToContent(props.modelValue);
 
     content.forEach(item => {
@@ -105,8 +105,16 @@ const renderModelValue = () => {
             const textNode = document.createTextNode(item.value);
             editableContainer.value?.appendChild(textNode);
         } else if (item.type === 'tag') {
-            const tagContainer = createTagContainer(item.value);
-            editableContainer.value?.appendChild(tagContainer);
+            // 检查标签是否存在于 tags 列表中
+            if (props.tags && props.tags[item.value]) {
+                // 存在于 tags 列表中，渲染为标签
+                const tagContainer = createTagContainer(item.value);
+                editableContainer.value?.appendChild(tagContainer);
+            } else {
+                // 不存在于 tags 列表中，渲染为文本节点
+                const textNode = document.createTextNode(`{${item.value}}`);
+                editableContainer.value?.appendChild(textNode);
+            }
         }
     });
 };
@@ -186,17 +194,14 @@ const saveCursorPosition = () => {
     }
 };
 
-// 处理输入框焦点事件
 const handleFocus = () => {
     saveCursorPosition();
 };
 
-// 处理输入框点击事件
 const handleClick = () => {
     saveCursorPosition();
 };
 
-// 处理输入框输入事件
 const handleInput = () => {
     nextTick(() => {
         updateModelValue();
@@ -207,6 +212,9 @@ const handleInput = () => {
 // 点击标签添加到输入框中
 const handleTagClick = (tag: string) => {
     if (!editableContainer.value || !cursorManager) return;
+
+    // 检查标签是否存在于 tags 列表中
+    if (!props.tags || !props.tags[tag]) return;
 
     // 创建标签容器
     const tagContainer = createTagContainer(tag);
@@ -226,7 +234,6 @@ const handleTagClick = (tag: string) => {
     });
 };
 
-// 删除标签的公用方法
 const removeTagAndUpdate = (element: HTMLElement) => {
     if (cursorManager) {
         cursorManager.removeElementAndAdjustCursor(element);
@@ -294,9 +301,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         const range = selection.getRangeAt(0);
 
         // 如果有选中内容，让浏览器自然处理删除
-        if (!range.collapsed) {
-            return;
-        }
+        if (!range.collapsed) return;
 
         const { startContainer, startOffset } = range;
 
@@ -314,9 +319,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     });
 };
 
-onMounted(() => {
-    initComponent();
-});
+onMounted(initComponent);
 </script>
 
 <style lang="scss" scoped>
