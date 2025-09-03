@@ -87,7 +87,7 @@ export class CursorManager {
         const selection = window.getSelection();
         if (!selection || selection.rangeCount === 0) return false;
 
-        const range = selection.getRangeAt(0);
+        // const range = selection.getRangeAt(0);
         const anchorNode = selection.anchorNode;
 
         if (!anchorNode) return false;

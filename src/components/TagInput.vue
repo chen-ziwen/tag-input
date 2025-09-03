@@ -1,35 +1,36 @@
 <template>
     <div class="tag-input-container">
         <div ref="editableContainer" class="editable-area" contenteditable="true" @keydown="handleKeyDown"
-            @focus="handleFocus" @click="handleClick" @input="handleInput" placeholder="请输入内容或点击下方标签添加..."></div>
+            @focus="handleFocus" @click="handleClick" @input="handleInput" :placeholder="placeholder"></div>
         <div class="tags-container">
-            <el-tag v-for="tag in modelValue.tags" :key="tag" class="tag-item" @click="handleTagClick(tag)">
-                {{ tag }}
+            <el-tag v-for="(label, key) in tags" :key="key" class="tag-item" @click="handleTagClick(key)">
+                {{ label }}
             </el-tag>
         </div>
     </div>
 </template>
 
 <script lang="ts" setup>
-import { ref, h, render, useTemplateRef, onMounted, nextTick, toRaw } from 'vue'
+import { ref, h, render, useTemplateRef, onMounted, nextTick } from 'vue'
 import { ElTag } from 'element-plus'
-import { CursorManager } from '../utils/CursorManager'
+import { CursorManager } from '../utils/CursorManager';
 
-export interface TagInputModelValue {
-    tags: string[]; // 可选标签列表
-    value: Array<{ type: 'text' | 'tag'; value: string }>; // 输入框中的内容，可能是文本也可能是标签
-}
+type valueType = "text" | "tag";
 
 interface TagInputProps {
-    modelValue: TagInputModelValue;
+    modelValue: string;
+    tags?: Record<string, string>;
+    placeholder?: string;
 }
 
 const props = withDefaults(defineProps<TagInputProps>(), {
-    modelValue: () => ({ tags: [], value: [] })
+    modelValue: "",
+    tags: () => ({}),
+    placeholder: "请输入内容或点击下方标签添加..."
 });
 
 const emit = defineEmits<{
-    'update:modelValue': [value: TagInputModelValue]
+    'update:modelValue': [value: string]
 }>();
 
 const editableContainer = useTemplateRef<HTMLElement>("editableContainer");
@@ -37,6 +38,47 @@ const currentRange = ref<Range | null>(null);
 
 // 光标管理实例
 let cursorManager: CursorManager;
+
+// 解析字符串为内容数组
+const parseStringToContent = (str: string): Array<{ type: valueType; value: string }> => {
+    if (!str) return [];
+
+    const content: Array<{ type: valueType; value: string }> = [];
+    const tagRegex = /\{([^}]+)\}/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = tagRegex.exec(str)) !== null) {
+        // 添加标签前的文本
+        if (match.index > lastIndex) {
+            const textBefore = str.slice(lastIndex, match.index);
+            if (textBefore) {
+                content.push({ type: 'text', value: textBefore });
+            }
+        }
+
+        // 添加标签
+        const tag = match[1] || "";
+        content.push({ type: 'tag', value: tag });
+
+        lastIndex = match.index + match[0].length;
+    }
+
+    // 添加最后剩余的文本
+    if (lastIndex < str.length) {
+        const textAfter = str.slice(lastIndex);
+        if (textAfter) {
+            content.push({ type: 'text', value: textAfter });
+        }
+    }
+
+    return content;
+};
+
+// 将内容数组转换为字符串
+const contentToString = (content: Array<{ type: valueType; value: string }>): string => {
+    return content.map(item => item.type === 'text' ? item.value : `{${item.value}}`).join('');
+};
 
 // 初始化组件
 const initComponent = () => {
@@ -49,13 +91,16 @@ const initComponent = () => {
     renderModelValue();
 };
 
-// 将 modelValue 渲染到 DOM 中
+// 将 modelValue 渲染到 dom 中
 const renderModelValue = () => {
-    if (!editableContainer.value || !props.modelValue.value.length) return;
+    if (!editableContainer.value || !props.modelValue) return;
 
     editableContainer.value.innerHTML = '';
 
-    props.modelValue.value.forEach(item => {
+    // 对 modelValue 进行解析
+    const content = parseStringToContent(props.modelValue);
+
+    content.forEach(item => {
         if (item.type === 'text') {
             const textNode = document.createTextNode(item.value);
             editableContainer.value?.appendChild(textNode);
@@ -68,6 +113,8 @@ const renderModelValue = () => {
 
 // 创建一个 ElTag 标签的虚拟节点
 const createTagElement = (tag: string, onRemove: () => void) => {
+    const displayText = props.tags?.[tag] || tag;
+
     return h(ElTag, {
         key: tag,
         closable: true,
@@ -76,11 +123,11 @@ const createTagElement = (tag: string, onRemove: () => void) => {
             onRemove();
         }
     }, {
-        default: () => tag
+        default: () => displayText
     });
 };
 
-// 创建标签容器 DOM 元素
+// 创建标签容器 dom 元素
 const createTagContainer = (tag: string) => {
     const container = document.createElement('span');
     container.style.display = 'inline-block';
@@ -90,9 +137,8 @@ const createTagContainer = (tag: string) => {
 
     // 定义删除函数
     const removeTag = () => {
-        if (cursorManager) {
-            cursorManager.removeElementAndAdjustCursor(container);
-        }
+        cursorManager && cursorManager.removeElementAndAdjustCursor(container);
+
         nextTick(() => {
             updateModelValue();
             saveCursorPosition();
@@ -110,30 +156,27 @@ const createTagContainer = (tag: string) => {
 const updateModelValue = () => {
     if (!editableContainer.value) return;
 
-    const value: Array<{ type: 'text' | 'tag'; value: string }> = [];
+    const content: Array<{ type: valueType; value: string }> = [];
 
     // 遍历编辑器中的所有子节点
     Array.from(editableContainer.value.childNodes).forEach(node => {
         if (node.nodeType === Node.TEXT_NODE) {
-            const text = node.textContent?.trim();
+            const text = node.textContent || '';
             if (text) {
-                value.push({ type: 'text', value: text });
+                content.push({ type: 'text', value: text });
             }
         } else if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
             if (element.classList.contains('tag-container')) {
                 const tagValue = element.dataset.tag;
                 if (tagValue) {
-                    value.push({ type: 'tag', value: tagValue });
+                    content.push({ type: 'tag', value: tagValue });
                 }
             }
         }
     });
 
-    emit('update:modelValue', {
-        tags: toRaw(props.modelValue.tags),
-        value
-    });
+    emit('update:modelValue', contentToString(content));
 };
 
 // 保存当前光标位置
@@ -177,7 +220,6 @@ const handleTagClick = (tag: string) => {
     // 在指定位置插入标签
     cursorManager.insertElementAtRange(tagContainer, targetRange);
 
-    // 更新数据
     nextTick(() => {
         updateModelValue();
         saveCursorPosition();
@@ -267,7 +309,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
         }
     }
 
-    // 其他按键或无需特殊处理的 Backspace，保存光标位置
     nextTick(() => {
         saveCursorPosition();
     });
