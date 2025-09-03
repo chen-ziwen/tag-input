@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import TagInput from './components/TagInput.vue';
 
-
 const tags = {
   userName: "用户",
   message: "弹幕",
@@ -10,7 +9,7 @@ const tags = {
   giftCount: "数量"
 };
 
-const mockValue = ref("{userName}赠送{giftName}x{giftCount}，感谢{userName}大哥，祝您发大财！");
+const mockValue = ref("{userName}赠送{giftName}x{giftCount}，感谢{userName}大哥，祝您发大财！{giftName}");
 
 // 处理值变化
 const handleValueChange = (newValue: string) => {

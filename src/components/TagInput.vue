@@ -1,7 +1,8 @@
 <template>
     <div class="tag-input-container">
         <div ref="editableContainer" class="editable-area" contenteditable="true" @keydown="handleKeyDown"
-            @focus="handleFocus" @click="handleClick" @input="handleInput" :placeholder="placeholder"></div>
+            @focus="handleFocus" @click="handleClick" @input="handleInput" @blur="handleBlur"
+            :placeholder="placeholder"></div>
         <div class="tags-container">
             <el-tag v-for="(label, key) in tags" :key="key" class="tag-item" @click="handleTagClick(key)">
                 {{ label }}
@@ -18,20 +19,16 @@ import { CursorManager } from '../utils/CursorManager';
 type valueType = "text" | "tag";
 
 interface TagInputProps {
-    modelValue: string;
     tags?: Record<string, string>;
     placeholder?: string;
 }
 
 const props = withDefaults(defineProps<TagInputProps>(), {
-    modelValue: "",
     tags: () => ({}),
     placeholder: "请输入内容或点击下方标签添加..."
 });
 
-const emit = defineEmits<{
-    'update:modelValue': [value: string]
-}>();
+const model = defineModel({ default: "", required: true });
 
 const editableContainer = useTemplateRef<HTMLElement>("editableContainer");
 const currentRange = ref<Range | null>(null);
@@ -48,7 +45,6 @@ const parseStringToContent = (str: string): Array<{ type: valueType; value: stri
     let lastIndex = 0;
     let match;
 
-    // 如果 exec 的正则带有 g 标志，则每次执行会从上次匹配结束的位置开始， lastIndex 会更新
     while ((match = tagRegex.exec(str)) !== null) {
         // 添加标签前的文本
         if (match.index > lastIndex) {
@@ -85,33 +81,29 @@ const contentToString = (content: Array<{ type: valueType; value: string }>): st
 const initComponent = () => {
     if (!editableContainer.value) return;
 
-    // 初始化光标管理器
     cursorManager = new CursorManager(editableContainer.value);
 
-    // 初始化时把 modelValue 转换为真实 dom
-    renderModelValue();
+    // 初始化时把 model 转换为真实 dom
+    renderModel();
 };
 
-// 将 modelValue 渲染到 dom 中
-const renderModelValue = () => {
-    if (!editableContainer.value || !props.modelValue) return;
+// 将 model 渲染到 dom 中
+const renderModel = () => {
+    if (!editableContainer.value || !model.value) return;
 
     editableContainer.value.innerHTML = '';
 
-    const content = parseStringToContent(props.modelValue);
+    const content = parseStringToContent(model.value);
 
     content.forEach(item => {
         if (item.type === 'text') {
             const textNode = document.createTextNode(item.value);
             editableContainer.value?.appendChild(textNode);
         } else if (item.type === 'tag') {
-            // 检查标签是否存在于 tags 列表中
             if (props.tags && props.tags[item.value]) {
-                // 存在于 tags 列表中，渲染为标签
                 const tagContainer = createTagContainer(item.value);
                 editableContainer.value?.appendChild(tagContainer);
             } else {
-                // 不存在于 tags 列表中，渲染为文本节点
                 const textNode = document.createTextNode(`{${item.value}}`);
                 editableContainer.value?.appendChild(textNode);
             }
@@ -143,12 +135,10 @@ const createTagContainer = (tag: string) => {
     container.dataset.tag = tag;
     container.className = 'tag-container';
 
-    // 定义删除函数
     const removeTag = () => {
         cursorManager && cursorManager.removeElementAndAdjustCursor(container);
 
         nextTick(() => {
-            updateModelValue();
             saveCursorPosition();
         });
     };
@@ -160,13 +150,11 @@ const createTagContainer = (tag: string) => {
     return container;
 };
 
-// 更新 modelValue
 const updateModelValue = () => {
     if (!editableContainer.value) return;
 
     const content: Array<{ type: valueType; value: string }> = [];
 
-    // 遍历编辑器中的所有子节点
     Array.from(editableContainer.value.childNodes).forEach(node => {
         if (node.nodeType === Node.TEXT_NODE) {
             const text = node.textContent || '';
@@ -184,7 +172,7 @@ const updateModelValue = () => {
         }
     });
 
-    emit('update:modelValue', contentToString(content));
+    model.value = contentToString(content);
 };
 
 // 保存当前光标位置
@@ -204,19 +192,20 @@ const handleClick = () => {
 
 const handleInput = () => {
     nextTick(() => {
-        updateModelValue();
         saveCursorPosition();
     });
+};
+
+const handleBlur = () => {
+    updateModelValue();
 };
 
 // 点击标签添加到输入框中
 const handleTagClick = (tag: string) => {
     if (!editableContainer.value || !cursorManager) return;
 
-    // 检查标签是否存在于 tags 列表中
     if (!props.tags || !props.tags[tag]) return;
 
-    // 创建标签容器
     const tagContainer = createTagContainer(tag);
 
     // 获取当前保存的光标位置，如果没有则使用默认位置
@@ -229,7 +218,6 @@ const handleTagClick = (tag: string) => {
     cursorManager.insertElementAtRange(tagContainer, targetRange);
 
     nextTick(() => {
-        updateModelValue();
         saveCursorPosition();
     });
 };
@@ -239,7 +227,6 @@ const removeTagAndUpdate = (element: HTMLElement) => {
         cursorManager.removeElementAndAdjustCursor(element);
     }
     nextTick(() => {
-        updateModelValue();
         saveCursorPosition();
     });
 };
@@ -249,44 +236,19 @@ const isTagContainer = (element: any): element is HTMLElement => {
     return element?.classList?.contains('tag-container');
 };
 
-// 查找要删除的标签元素
-const findTagToDelete = (startContainer: Node, startOffset: number): HTMLElement | null => {
+// 获取光标前面的元素
+const getPreviousElement = (startContainer: Node, startOffset: number): Node | null => {
     if (!editableContainer.value) return null;
 
-    // 情况1: 光标在标签容器内部
-    let currentNode: Node | null = startContainer;
-    while (currentNode && currentNode !== editableContainer.value) {
-        if (currentNode.nodeType === Node.ELEMENT_NODE && isTagContainer(currentNode)) {
-            return currentNode;
-        }
-        currentNode = currentNode.parentNode;
-    }
-
-    // 情况2: 光标在文本节点开始位置，检查前一个兄弟节点
+    // 如果光标在文本节点开始位置，检查前一个兄弟节点
     if (startOffset === 0 && startContainer.nodeType === Node.TEXT_NODE) {
-        const prevSibling = startContainer.previousSibling;
-        if (isTagContainer(prevSibling)) {
-            return prevSibling;
-        }
+        return startContainer.previousSibling;
     }
 
-    // 情况3: 光标在容器根节点，检查前面的子节点
+    // 如果光标在容器根节点，检查前面的子节点
     if (startContainer === editableContainer.value && startOffset > 0) {
-        const prevChild = editableContainer.value.childNodes[startOffset - 1];
-        if (isTagContainer(prevChild)) {
-            return prevChild;
-        }
-    }
-
-    // 情况4: 光标在容器末尾，检查最后一个子元素
-    if (startContainer === editableContainer.value) {
         const childNodes = editableContainer.value.childNodes;
-        if (startOffset === childNodes.length) {
-            const lastChild = editableContainer.value.lastElementChild;
-            if (isTagContainer(lastChild)) {
-                return lastChild;
-            }
-        }
+        return childNodes[startOffset - 1] || null;
     }
 
     return null;
@@ -305,13 +267,17 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
         const { startContainer, startOffset } = range;
 
-        // 查找要删除的标签
-        const tagToDelete = findTagToDelete(startContainer, startOffset);
-        if (tagToDelete) {
+        // 获取光标前面的元素
+        const prevElement = getPreviousElement(startContainer, startOffset);
+
+        // 如果前面的元素是标签容器，删除该标签
+        if (isTagContainer(prevElement)) {
             e.preventDefault();
-            removeTagAndUpdate(tagToDelete);
+            removeTagAndUpdate(prevElement);
             return;
         }
+
+        // 其他情况让浏览器自然处理删除（包括文本删除）
     }
 
     nextTick(() => {
