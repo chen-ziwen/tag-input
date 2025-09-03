@@ -115,15 +115,43 @@ export class CursorManager {
      * @param element 要删除的元素
      */
     removeElementAndAdjustCursor(element: HTMLElement) {
-        // 创建一个新的 Range 指向元素前面
+        // 找到一个安全的光标位置
+        const parentContainer = element.parentElement;
+        if (!parentContainer) {
+            element.remove();
+            return;
+        }
+
+        // 获取元素的前一个兄弟节点
+        const prevSibling = element.previousSibling;
+
+        // 创建一个新的 Range
         const range = document.createRange();
-        range.setStartBefore(element);
-        range.setEndBefore(element);
+
+        if (prevSibling && prevSibling.nodeType === Node.TEXT_NODE) {
+            // 如果前面有文本节点，将光标放在文本节点末尾
+            range.setStart(prevSibling, prevSibling.textContent?.length || 0);
+            range.setEnd(prevSibling, prevSibling.textContent?.length || 0);
+        } else {
+            // 否则创建一个指向元素前面位置的范围
+            range.setStartBefore(element);
+            range.setEndBefore(element);
+        }
 
         // 删除元素
         element.remove();
 
-        // 恢复光标位置
-        this.restoreRange(range);
+        // 验证 range 是否仍然有效
+        try {
+            if (parentContainer.contains(range.commonAncestorContainer)) {
+                this.restoreRange(range);
+            } else {
+                // 如果 range 无效，移动到容器末尾
+                this.moveCursorToEnd();
+            }
+        } catch (error) {
+            // 如果出现任何错误，移动到容器末尾
+            this.moveCursorToEnd();
+        }
     }
 }

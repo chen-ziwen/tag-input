@@ -138,9 +138,7 @@ const createTagContainer = (tag: string) => {
     const removeTag = () => {
         cursorManager && cursorManager.removeElementAndAdjustCursor(container);
 
-        nextTick(() => {
-            saveCursorPosition();
-        });
+        nextTick(saveCursorPosition);
     };
 
     // 创建虚拟节点并渲染到容器中
@@ -191,9 +189,7 @@ const handleClick = () => {
 };
 
 const handleInput = () => {
-    nextTick(() => {
-        saveCursorPosition();
-    });
+    nextTick(saveCursorPosition);
 };
 
 const handleBlur = () => {
@@ -217,18 +213,15 @@ const handleTagClick = (tag: string) => {
     // 在指定位置插入标签
     cursorManager.insertElementAtRange(tagContainer, targetRange);
 
-    nextTick(() => {
-        saveCursorPosition();
-    });
+    nextTick(saveCursorPosition);
 };
 
 const removeTagAndUpdate = (element: HTMLElement) => {
     if (cursorManager) {
         cursorManager.removeElementAndAdjustCursor(element);
     }
-    nextTick(() => {
-        saveCursorPosition();
-    });
+
+    nextTick(saveCursorPosition);
 };
 
 // 检查元素是否为标签容器
@@ -263,7 +256,10 @@ const handleKeyDown = (e: KeyboardEvent) => {
         const range = selection.getRangeAt(0);
 
         // 如果有选中内容，让浏览器自然处理删除
-        if (!range.collapsed) return;
+        if (!range.collapsed) {
+            nextTick(saveCursorPosition);
+            return;
+        }
 
         const { startContainer, startOffset } = range;
 
@@ -278,11 +274,8 @@ const handleKeyDown = (e: KeyboardEvent) => {
         }
 
         // 其他情况让浏览器自然处理删除（包括文本删除）
+        nextTick(saveCursorPosition);
     }
-
-    nextTick(() => {
-        saveCursorPosition();
-    });
 };
 
 onMounted(initComponent);
