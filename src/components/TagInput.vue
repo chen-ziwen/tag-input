@@ -220,20 +220,23 @@ const getPreviousElement = (startContainer: Node, startOffset: number): Node | n
 
     // 1. 如果光标在文本节点中
     if (startContainer.nodeType === Node.TEXT_NODE) {
-        // 光标在文本开头，检查前一个兄弟节点
         if (startOffset === 0) {
             return startContainer.previousSibling;
         }
-        // 光标在文本中间或末尾，不删除标签
         return null;
     }
 
-    // 2. 如果光标在容器根节点
+    /**
+     * 2. 如果光标在容器根节点 
+     * 当删除到 ElTag 标签，光标会跳转到容器根节点。因为 ElTag 被设置为不可编辑，当删除到标签时，光标会默认跳转到最近的可编辑容器
+     */
     if (startContainer === editableContainer.value && startOffset > 0) {
         const childNodes = Array.from(editableContainer.value.childNodes);
 
         // 从光标前一个位置开始向前查找第一个元素节点
         for (let i = startOffset - 1; i >= 0; i--) {
+
+            // 跳过空节点，不然会导致删除标签时光标无法定位，最终导致输入框被错误的清空
             const node = childNodes[i];
             if (!node) continue;
 
@@ -253,7 +256,7 @@ const getPreviousElement = (startContainer: Node, startOffset: number): Node | n
 };
 
 // 处理键盘删除事件
-// 文本节点采用原生删除，遇到标签则利用方法删除 (否则会有bug)
+// 文本节点采用原生删除，遇到标签则利用方法删除 (否则会有 bug)
 const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Backspace') {
         const selection = window.getSelection();
