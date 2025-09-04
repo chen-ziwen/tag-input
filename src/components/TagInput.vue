@@ -21,7 +21,7 @@ type valueType = "text" | "tag";
 interface TagInputProps {
     tags?: Record<string, string>;
     placeholder?: string;
-}
+};
 
 const props = withDefaults(defineProps<TagInputProps>(), {
     tags: () => ({}),
@@ -38,7 +38,6 @@ const initComponent = () => {
     cursorManager = new CursorManager(editableContainer.value);
     renderModel();
 };
-
 
 // 解析字符串为内容数组
 const parseStringToContent = (str: string): Array<{ type: valueType; value: string }> => {
@@ -228,7 +227,8 @@ const getPreviousElement = (startContainer: Node, startOffset: number): Node | n
 
     /**
      * 2. 如果光标在容器根节点 
-     * 当删除到 ElTag 标签，光标会跳转到容器根节点。因为 ElTag 被设置为不可编辑，当删除到标签时，光标会默认跳转到最近的可编辑容器
+     * 当删除到 ElTag 标签，光标会跳转到容器根节点，
+     * 因为 ElTag 被设置为不可编辑，当删除到标签时，光标会默认跳转到最近的可编辑容器。
      */
     if (startContainer === editableContainer.value && startOffset > 0) {
         const childNodes = Array.from(editableContainer.value.childNodes);
@@ -255,8 +255,7 @@ const getPreviousElement = (startContainer: Node, startOffset: number): Node | n
     return null;
 };
 
-// 处理键盘删除事件
-// 文本节点采用原生删除，遇到标签则利用方法删除 (否则会有 bug)
+// 文本节点采用原生删除，遇到标签则利用方法删除
 const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Backspace') {
         const selection = window.getSelection();
